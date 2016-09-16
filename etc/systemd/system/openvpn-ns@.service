@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenVPN inside network namespace
+Requires=vpnns.service
+After=syslog.target network.target vpn-ns.service
+
+[Service]
+PrivateTmp=true
+Type=forking
+PIDFile=/var/run/openvpn/%i.pid
+ExecStart=/bin/ip netns exec vpn /usr/sbin/openvpn --daemon --writepid /var/run/openvpn/%i.pid --cd /etc/openvpn/ --config %i.conf
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,36 @@
+[Unit]
+Description=Network namespace for VPN
+After=syslog.target network.target
+StopWhenUnneeded=true
+RefuseManualStart=true
+RefuseManualStop=true
+
+[Service]
+EnvironmentFile=/etc/netns/vpn.env
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/ip netns add vpn
+ExecStart=/bin/ip netns exec vpn ip addr add 127.0.0.1/8 dev lo
+ExecStart=/bin/ip netns exec vpn ip link set lo up
+ExecStart=/bin/ip link add vpn0 type veth peer name vpn1
+ExecStart=/bin/ip link set vpn0 up
+ExecStart=/bin/ip link set vpn1 netns vpn up
+ExecStart=/bin/ip addr add ${NETWORK}.1/24 dev vpn0
+ExecStart=/bin/ip netns exec vpn ip addr add ${NETWORK}.2/24 dev vpn1
+ExecStart=/bin/ip netns exec vpn ip route add ${VPN_SERVER} via ${NETWORK}.1 dev vpn1
+ExecStart=/bin/ip netns exec vpn ip route add default via ${NETWORK}.254 dev vpn1 
+ExecStart=/sbin/iptables -A INPUT ! -i vpn0 -s ${NETWORK}.0/24 -j DROP
+ExecStart=/sbin/iptables -t nat -A POSTROUTING -s ${NETWORK}.0/24 -o wl+ -j MASQUERADE
+ExecStart=/sbin/sysctl  -q net.ipv4.ip_forward=1
+ExecStart=/bin/mkdir  -p /etc/netns/vpn
+ExecStart=/bin/sh -c "echo 'nameserver 8.8.8.8' > /etc/netns/vpn/resolv.conf"
+
+ExecStop=/bin/rm -rf /etc/netns/vpn
+ExecStop=/sbin/sysctl -q net.ipv4.ip_forward=0
+ExecStop=/sbin/iptables -D INPUT ! -i vpn0 -s ${NETWORK}.0/24 -j DROP
+ExecStop=/sbin/iptables -t nat -D POSTROUTING -s ${NETWORK}.0/24 -o wl+ -j MASQUERADE
+ExecStop=/bin/ip link del vpn0
+ExecStop=/bin/ip netns delete vpn
+
+[Install]
+WantedBy=multi-user.target
