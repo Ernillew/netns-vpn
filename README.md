@@ -18,21 +18,23 @@ Russian version
 
     $ sudo systemctl enable openvpn-ns@NAME.service
 
-Где NAME все то же имя вашего конфиг-файла OpenVPN. После этого можно запускать
+где NAME все то же имя вашего конфиг-файла OpenVPN. После этого можно запускать
 
     $ sudo systemctl start openvpn-ns@NAME.service
 
-И OpenVPN запуститься в выделенном network namespace по имени vpn.
+OpenVPN запуститься в выделенном network namespace по имени vpn.
 
 Командой
 
     $ sudo ip netns exec vpn curl https://ip.lindon.pw
 
-Вы сможете проверить, что внутри netns теперь есть VPN и вы ходите с адреса своего сервера.
+вы сможете проверить, что внутри netns теперь есть VPN и вы ходите с адреса своего сервера.
 После чего командой типа
 
     $ dbus-launch sudo ip netns exec vpn su - USERNAME -c firefox
 
-Где USERNAME — имя вашего пользователя
+где USERNAME — имя вашего пользователя, можно запускать браузер который будет ходить через VPN, в то время, как вся остальная система будет ходить напрямую, как и прежде.
 
-можно запускать браузер который будет ходить через VPN, в то время, как вся остальная система будет ходить напрямую, как и прежде.
+При написании конфигов использованы материалы расположенные по адресам https://schnouki.net/posts/2014/12/12/openvpn-for-a-single-application-on-linux/ и https://www.linux.org.ru/forum/admin/11591881.
+
+Отдельная благодарность Сергею Воронову сподвигнувшему меня сделать конфиги
