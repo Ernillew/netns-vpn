@@ -34,4 +34,5 @@ Russian version
     $ dbus-launch sudo ip netns exec vpn su - USERNAME -c firefox
 
 Где USERNAME — имя вашего пользователя
+
 Можно запускать браузер который будет ходить через VPN, в то время, как вся остальная система будет ходить напрямую, как и прежде.
