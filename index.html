@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-dark.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print">
+
+    <title>Netns-vpn by Ernillew</title>
+  </head>
+
+  <body>
+
+    <header>
+      <div class="container">
+        <h1>Netns-vpn</h1>
+        <h2>Run OpenVPN in network namespace using systemd</h2>
+
+        <section id="downloads">
+          <a href="https://github.com/Ernillew/netns-vpn/zipball/master" class="btn">Download as .zip</a>
+          <a href="https://github.com/Ernillew/netns-vpn/tarball/master" class="btn">Download as .tar.gz</a>
+          <a href="https://github.com/Ernillew/netns-vpn" class="btn btn-github"><span class="icon"></span>View on GitHub</a>
+        </section>
+      </div>
+    </header>
+
+    <div class="container">
+      <section id="main_content">
+        <h2>
+<a id="Запуск-отдельных-приложений-через-openvpn-без-контейнеров-и-виртуализации" class="anchor" href="#%D0%97%D0%B0%D0%BF%D1%83%D1%81%D0%BA-%D0%BE%D1%82%D0%B4%D0%B5%D0%BB%D1%8C%D0%BD%D1%8B%D1%85-%D0%BF%D1%80%D0%B8%D0%BB%D0%BE%D0%B6%D0%B5%D0%BD%D0%B8%D0%B9-%D1%87%D0%B5%D1%80%D0%B5%D0%B7-openvpn-%D0%B1%D0%B5%D0%B7-%D0%BA%D0%BE%D0%BD%D1%82%D0%B5%D0%B9%D0%BD%D0%B5%D1%80%D0%BE%D0%B2-%D0%B8-%D0%B2%D0%B8%D1%80%D1%82%D1%83%D0%B0%D0%BB%D0%B8%D0%B7%D0%B0%D1%86%D0%B8%D0%B8" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Запуск отдельных приложений через OpenVPN без контейнеров и виртуализации</h2>
+
+<p>Оригинал статьи написан для публикации на сайте habrahabr.ru и находится <a href="https://habrahabr.ru/post/310646/" title="тут">тут</a>. Копия на sohabr находится <a href="https://sohabr.net/habr/post/310646/" title="тут">тут</a>.</p>
+
+<p>Как-то одним прекрасным утром я рассказывал в телеграмме бывшему другу и коллеге о том, что такое network namespaces в Linux и с чем его едят. Коллега восхитился, так же, как я, в свое время, а мне пришла в голову, что надо не костылить скриптом, как я делал до этого, а автоматизировать запуск отдельного network namespace и OpenVPN в нем. Так как я использую Debian Sid и Ubuntu 16.04 LTS автоматизацию я себе сделал в виде юнитов systemd, но об этом в конце статьи. После того, как я рассказал старшему брату, человеку далекому от IT, о возможности запускать только одно приложение, например браузер, под VPN, а остальные, как и прежде, он сказал «Только ради этого стоит перейти на Linux на компе», а я решил написать статью-инструкцию, как это сделать.</p>
+
+<p>О том, что такое network namespaces в Linux написано много, но для тех кто не знает я кратко процитирую попавшееся под руку описание на русском языке:</p>
+
+<p>«В linux относительно давно появилась такая замечательная вещь, как неймспейсы (namespaces). Основное применение данной технологии — контейнерная виртуализация, но и на маршрутизаторе можно придумать много разных применений, так как среди неймспейсов есть «network namespaces». Network namespaces позволяют в рамках одной машины в каждом неймспейсе иметь:</p>
+
+<ul>
+<li>свой набор таблиц маршрутизации (а их 2^31-1 шт)</li>
+<li>свою arp-таблицу</li>
+<li>свои правила iptables</li>
+<li>свои устройства (а значит и qdisc + class'ы tc)»</li>
+</ul>
+
+<p>А теперь перейдем к теме нашей статьи.</p>
+
+<p>Скрипт, для ручного поднятия network namespace и запуска в нем OpenVPN с комментированием:</p>
+
+<div class="highlight highlight-source-shell"><pre><span class="pl-c">#!/bin/bash</span>
+sudo ip netns add vpn <span class="pl-c"># создаем namespace по имени vpn</span>
+sudo ip netns <span class="pl-c1">exec</span> vpn ip addr add 127.0.0.1/8 dev lo <span class="pl-c"># создаем в нем интерфейс lo</span>
+sudo ip netns <span class="pl-c1">exec</span> vpn ip link <span class="pl-c1">set</span> lo up <span class="pl-c"># поднимаем loopback-интерфейс в netns</span>
+sudo ip link add vpn0 <span class="pl-c1">type</span> veth peer name vpn1 <span class="pl-c"># добавляем в системе виртуальный интерфейс, через который будет netns общаться с внешним миром</span>
+sudo ip link <span class="pl-c1">set</span> vpn0 up <span class="pl-c"># поднимаем созданный интерфейс</span>
+sudo ip link <span class="pl-c1">set</span> vpn1 netns vpn up <span class="pl-c"># создаем в netns интерфейс для общения во внешнем мире</span>
+sudo ip addr add 10.10.10.1/24 dev vpn0 <span class="pl-c"># добавляем адрес на интерфейсе в системе</span>
+sudo ip netns <span class="pl-c1">exec</span> vpn ip addr add 10.10.10.2/24 dev vpn1 <span class="pl-c"># добавляем адрес на интерфейсе в netns</span>
+sudo ip netns <span class="pl-c1">exec</span> vpn ip route add VPN_IP via 10.10.10.1 dev vpn1 <span class="pl-c"># добавляем маршрут до VPN-сервера(замените VPN_IP на адрес вашего сервера)</span>
+sudo ip netns <span class="pl-c1">exec</span> vpn ip route add default via 10.10.10.254 dev vpn1 <span class="pl-c"># Добавляем адрес которого у нас нет в сети в качестве гейтвея, что бы OpenVPN мог заменить при запуске гейтвей на свой(если не будет никакого гейта, то OpenVPN не сможет назначить гейт и пакеты во вне у нас ходить через него не будут) </span>
+sudo iptables -A INPUT <span class="pl-k">!</span> -i vpn0 -s 10.10.10.0/24 -j DROP 
+sudo iptables -t nat -A POSTROUTING -s 10.10.10.0/24 -o en+ -j MASQUERADE <span class="pl-c"># настраиваем маскарадинг, замените en+ на wl+ если вы используете wifi-сетевуху для подключения к сети</span>
+sudo sysctl  -q net.ipv4.ip_forward=1 <span class="pl-c"># разрешаем форвардинг пакетов</span>
+sudo mkdir -p /etc/netns/vpn <span class="pl-c"># создаем директорию в которой у нас будет лежать resolv.conf для нашего netns </span>
+<span class="pl-c1">echo</span> <span class="pl-s"><span class="pl-pds">"</span>nameserver 8.8.8.8<span class="pl-pds">"</span></span> <span class="pl-k">|</span>sudo tee /etc/netns/vpn/resolv.conf <span class="pl-c"># прописываем гугловый 8.8.8.8 в качестве ДНСа</span>
+sudo ip netns <span class="pl-c1">exec</span> vpn /usr/sbin/openvpn --daemon --writepid /run/openvpn/vpn.pid --cd /etc/openvpn/ --config vpn.conf  <span class="pl-c"># Запускаем OpenVPN с конфиг-файлом /etc/openvpn/vpn.conf внутри netns</span></pre></div>
+
+<p>Выполнив этот скрипт мы можем при помощи команды:</p>
+
+<div class="highlight highlight-source-shell"><pre>$ sudo ip netns <span class="pl-c1">exec</span> vpn curl http://ifconfig.me</pre></div>
+
+<p>Убедиться, что внутри netns у нас поднят OpenVPN и в сеть внутри netns мы выходим через наш OpenVPN. Теперь командой:</p>
+
+<div class="highlight highlight-source-shell"><pre>$ sudo ip netns <span class="pl-c1">exec</span> vpn su - USER_NAME -c firefox</pre></div>
+
+<p>мы можем запустить браузер и получить браузер работающий через VPN, в то время, как вся остальная система у нас работает, как прежде и все остальное ходить напрямую(в команде замените USER_NAME на имя вашего пользователя). Пример запуска браузера приведен исходя из того, что на своем десктопе пользователь имеет sudo. Если кто-то может подсказать, как использовать ip netns exec без sudo буду признателен.</p>
+
+<p>Аналогично браузеру вы можете запускать IM-клиенты, торрент-клиенты и все остальное. В случае, если firefox ругается при запуске, что не может подключиться к dbus поставьте в команде его запуска dbus-launch перед sudo.</p>
+
+<p>Скрипт для остановки нашего netns:</p>
+
+<div class="highlight highlight-source-shell"><pre><span class="pl-c">#!/bin/bash</span>
+sudo ip netns pids vpn <span class="pl-k">|</span> xargs -rd<span class="pl-s"><span class="pl-pds">'</span>\n<span class="pl-pds">'</span></span> sudo <span class="pl-c1">kill</span>
+sudo rm -rf /etc/netns/vpn
+sudo sysctl -q net.ipv4.ip_forward=0
+sudo iptables -D INPUT <span class="pl-k">!</span> -i vpn0 -s 10.10.10.0/24 -j DROP
+sudo iptables -t nat -D POSTROUTING -s 10.10.10.0/24 -o en+ -j MASQUERADE
+sudo ip link del vpn0
+sudo ip netns delete vpn</pre></div>
+
+<p>Юниты для systemd поднимающие все указанное на автомате при загрузке. Юнит для netns:</p>
+
+<pre><code>[Unit]
+Description=Network namespace for VPN
+After=syslog.target network.target
+StopWhenUnneeded=true
+RefuseManualStart=true
+RefuseManualStop=true
+
+[Service]
+EnvironmentFile=/etc/netns/vpn.env
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/ip netns add vpn
+ExecStart=/bin/ip netns exec vpn ip addr add 127.0.0.1/8 dev lo
+ExecStart=/bin/ip netns exec vpn ip link set lo up
+ExecStart=/bin/ip link add vpn0 type veth peer name vpn1
+ExecStart=/bin/ip link set vpn0 up
+ExecStart=/bin/ip link set vpn1 netns vpn up
+ExecStart=/bin/ip addr add ${NETWORK}.1/24 dev vpn0
+ExecStart=/bin/ip netns exec vpn ip addr add ${NETWORK}.2/24 dev vpn1
+ExecStart=/bin/ip netns exec vpn ip route add ${VPN_SERVER} via ${NETWORK}.1 dev vpn1
+ExecStart=/bin/ip netns exec vpn ip route add default via ${NETWORK}.254 dev vpn1 
+ExecStart=/sbin/iptables -A INPUT ! -i vpn0 -s ${NETWORK}.0/24 -j DROP
+ExecStart=/sbin/iptables -t nat -A POSTROUTING -s ${NETWORK}.0/24 -o wl+ -j MASQUERADE
+ExecStart=/sbin/sysctl -q net.ipv4.ip_forward=1
+ExecStart=/bin/mkdir -p /etc/netns/vpn
+ExecStart=/bin/sh -c "echo 'nameserver 8.8.8.8' &gt; /etc/netns/vpn/resolv.conf"
+
+ExecStop=/bin/rm -rf /etc/netns/vpn
+ExecStop=/sbin/sysctl -q net.ipv4.ip_forward=0
+ExecStop=/sbin/iptables -D INPUT ! -i vpn0 -s ${NETWORK}.0/24 -j DROP
+ExecStop=/sbin/iptables -t nat -D POSTROUTING -s ${NETWORK}.0/24 -o wl+ -j MASQUERADE
+ExecStop=/bin/ip link del vpn0
+ExecStop=/bin/ip netns delete vpn
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+
+<p>Юнит для OpenVPN:</p>
+
+<pre><code>[Unit]
+Description=OpenVPN inside network namespace
+Requires=vpnns.service
+After=syslog.target network.target vpn-ns.service
+
+[Service]
+PrivateTmp=true
+Type=forking
+PIDFile=/var/run/openvpn/%i.pid
+ExecStart=/bin/ip netns exec vpn /usr/sbin/openvpn --daemon --writepid /var/run/openvpn/%i.pid --cd /etc/openvpn/ --config %i.conf
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+
+<p>И файл с переменными в котором я задаю адрес ВПН-сервера и сети используемой netns:</p>
+
+<div class="highlight highlight-source-shell"><pre>VPN_SERVER=1.1.1.1 <span class="pl-c"># Change IP to your OpenVPN-server IP</span>
+NETWORK=10.10.10</pre></div>
+
+<p>Скопировав файлы для systemd в их места на файловой системе командой</p>
+
+<div class="highlight highlight-source-shell"><pre>$ sudo systemctl <span class="pl-c1">enable</span> openvpn-ns@NAME.service</pre></div>
+
+<p>где NAME все то же имя вашего конфиг-файла OpenVPN. После этого можно запускать</p>
+
+<div class="highlight highlight-source-shell"><pre>$ sudo systemctl start openvpn-ns@NAME.service</pre></div>
+
+<p>OpenVPN запуститься в выделенном network namespace по имени vpn.
+Командой</p>
+
+<div class="highlight highlight-source-shell"><pre>$ sudo ip netns <span class="pl-c1">exec</span> vpn curl http://ifconfig.me</pre></div>
+
+<p>вы сможете проверить, что внутри netns теперь есть VPN и вы ходите с адреса своего сервера.</p>
+
+<p><a href="https://github.com/Ernillew/netns-vpn" title="Юниты systemd на github">Юниты systemd на github</a>.</p>
+
+<p>Скрипты <a href="https://gist.github.com/Ernillew/aa0a13e738d2165878111801c5144d18" title="vpnns_up.sh">vpnns_up.sh</a> и<a href="https://gist.github.com/Ernillew/8b1d9f410806a56f374d5183c304ffcf" title=" vpnns_down.sh"> vpnns_down.sh</a> на gist.gihub.com</p>
+
+<p>При подготовке статьи мне помогли две ссылки:</p>
+
+<p><a href="schnouki.net/posts/2014/12/12/openvpn-for-a-single-application-on-linux">schnouki.net/posts/2014/12/12/openvpn-for-a-single-application-on-linux</a>
+<a href="www.linux.org.ru/forum/admin/11591881">www.linux.org.ru/forum/admin/11591881</a></p>
+
+<p>Отдельная благодарность Сергею Воронову ака Рэйсту, после разговора с которым я и решил сделать конфиги и написать статью.</p>
+
+<p>P.S. Запуск VPN в выделенном network namespace может использоваться не только, как обход цензуры, но и для рабочих целей, я после того, как сделал юнит для OpenVPN сделал себе еще аналогичный поднимающий VPN до сети клиента, что бы можно было запускать с доступом к его сети только отдельные приложения.</p>
+      </section>
+    </div>
+
+    
+  </body>
+</html>
